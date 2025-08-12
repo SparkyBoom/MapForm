@@ -1,0 +1,25 @@
+import { useEffect } from "react";
+import axios from "axios";
+
+export default function StatusUpdater({ flightId, landingTime, status }) {
+  useEffect(() => {
+    const checkAndUpdateStatus = async () => {
+      const landingDate = new Date(landingTime);
+      const now = new Date();
+
+      // Only update if status is not "done" and time has passed
+      if (status !== "done" && now > landingDate) {
+        try {
+          await axios.patch(`/api/flights/${flightId}`, { status: "done" });
+          console.log(`Flight ${flightId} marked as done.`);
+        } catch (error) {
+          console.error("Failed to update status:", error);
+        }
+      }
+    };
+
+    checkAndUpdateStatus();
+  }, [flightId, landingTime, status]);
+
+  return null; // This is a background updater, no UI
+}
