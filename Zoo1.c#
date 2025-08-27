@@ -1,0 +1,206 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace ZooDemo
+{
+    // Animal kinds
+    public enum AnimalKind { Land, Flying, Aquatic }
+
+    // Abstract base
+    public abstract class Animal
+    {
+        public string Name { get; }
+        public string Species { get; }
+        public AnimalKind Kind { get; }
+        public string Enclosure { get; }
+
+        protected Animal(string name, string species, AnimalKind kind, string enclosure)
+        {
+            Name = name;
+            Species = species;
+            Kind = kind;
+            Enclosure = enclosure;
+        }
+
+        public override string ToString()
+            => $"{Name} the {Species} [{Kind}] | Enclosure: {Enclosure}";
+    }
+
+    // One concrete class for all animals
+    public class ZooAnimal : Animal
+    {
+        public ZooAnimal(string name, string species, AnimalKind kind, string enclosure)
+            : base(name, species, kind, enclosure) { }
+    }
+
+    // Visitors
+    public class Visitor
+    {
+        public string Name { get; }
+        public decimal MoneySpent { get; private set; }
+
+        public Visitor(string name) => Name = name;
+
+        public void Spend(decimal amount) => MoneySpent += amount;
+
+        public override string ToString() => $"{Name} (Spent: {MoneySpent:C})";
+    }
+
+    // Worker roles
+    public enum Role { Doctor, Feeder, Cleaner }
+
+    public abstract class Worker
+    {
+        public string Name { get; }
+        public Role Role { get; }
+
+        protected Worker(string name, Role role)
+        {
+            Name = name;
+            Role = role;
+        }
+
+        public abstract void PerformDuty(Zoo zoo);
+
+        public override string ToString() => $"{Name} ({Role})";
+    }
+
+    public class Doctor : Worker
+    {
+        public Doctor(string name) : base(name, Role.Doctor) { }
+
+        public override void PerformDuty(Zoo zoo)
+        {
+            foreach (var animal in zoo.Animals.Take(2))
+            {
+                if (zoo.TryReserveAnimal(animal, this))
+                {
+                    Console.WriteLine($"{this} checked on {animal.Name} ({animal.Species}).");
+                }
+            }
+        }
+    }
+
+    public class Feeder : Worker
+    {
+        public Feeder(string name) : base(name, Role.Feeder) { }
+
+        public override void PerformDuty(Zoo zoo)
+        {
+            foreach (var animal in zoo.Animals.Skip(1).Take(2))
+            {
+                if (zoo.TryReserveAnimal(animal, this))
+                {
+                    Console.WriteLine($"{this} fed {animal.Name} ({animal.Species}).");
+                }
+            }
+        }
+    }
+
+    public class Cleaner : Worker
+    {
+        public Cleaner(string name) : base(name, Role.Cleaner) { }
+
+        public override void PerformDuty(Zoo zoo)
+        {
+            foreach (var animal in zoo.Animals.Skip(2).Take(2))
+            {
+                if (zoo.TryReserveAnimal(animal, this))
+                {
+                    Console.WriteLine($"{this} cleaned the enclosure of {animal.Name}.");
+                }
+            }
+        }
+    }
+
+    // Zoo orchestrator
+    public class Zoo
+    {
+        public List<Animal> Animals { get; } = new();
+        public List<Worker> Workers { get; } = new();
+        public List<Visitor> Visitors { get; } = new();
+
+        private readonly HashSet<Animal> _reservedAnimals = new();
+        private readonly Random _rng = new();
+
+        public bool TryReserveAnimal(Animal animal, Worker worker)
+        {
+            if (_reservedAnimals.Contains(animal))
+                return false;
+
+            _reservedAnimals.Add(animal);
+
+            decimal price = worker.Role switch
+            {
+                Role.Doctor => 30m,
+                Role.Feeder => 20m,
+                Role.Cleaner => 10m,
+                _ => 15m
+            };
+
+            foreach (var v in Visitors)
+            {
+                if (_rng.NextDouble() < 0.5)
+                {
+                    v.Spend(price);
+                    Console.WriteLine($"{v.Name} paid {price:C} to see {animal.Name} with {worker.Role}");
+                }
+            }
+
+            return true;
+        }
+
+        public void ClearReservations() => _reservedAnimals.Clear();
+
+        public void RunDailyRoutine()
+        {
+            ClearReservations();
+            foreach (var w in Workers)
+                w.PerformDuty(this);
+        }
+
+        public void PrintStatus()
+        {
+            Console.WriteLine("\n--- Animals ---");
+            foreach (var a in Animals) Console.WriteLine(a);
+
+            Console.WriteLine("\n--- Visitors ---");
+            foreach (var v in Visitors) Console.WriteLine(v);
+        }
+    }
+
+    internal static class Program
+    {
+        private static void Main()
+        {
+            var zoo = new Zoo();
+
+            // Animals all created from one class
+            zoo.Animals.Add(new ZooAnimal("Skye", "Eagle", AnimalKind.Flying, "Aviary A"));
+            zoo.Animals.Add(new ZooAnimal("Splash", "Dolphin", AnimalKind.Aquatic, "Aquarium 1"));
+            zoo.Animals.Add(new ZooAnimal("Simba", "Lion", AnimalKind.Land, "Savannah 2"));
+            zoo.Animals.Add(new ZooAnimal("Momo", "Penguin", AnimalKind.Aquatic, "Penguin Pool"));
+
+            // Workers
+            zoo.Workers.Add(new Doctor("Dr. Maya"));
+            zoo.Workers.Add(new Feeder("Alex"));
+            zoo.Workers.Add(new Cleaner("Rina"));
+
+            // Visitors
+            zoo.Visitors.Add(new Visitor("Alice"));
+            zoo.Visitors.Add(new Visitor("Bob"));
+            zoo.Visitors.Add(new Visitor("Carla"));
+
+            // Run for 3 days
+            for (int day = 1; day <= 3; day++)
+            {
+                Console.WriteLine($"\n===== Day {day} =====");
+                zoo.RunDailyRoutine();
+                zoo.PrintStatus();
+            }
+
+            Console.WriteLine("\nSimulation complete.");
+        }
+    }
+}
