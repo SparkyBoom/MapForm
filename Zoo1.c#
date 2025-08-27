@@ -4,10 +4,9 @@ using System.Linq;
 
 namespace ZooDemo
 {
-    // Animal kinds
+    // --- Animal setup ---
     public enum AnimalKind { Land, Flying, Aquatic }
 
-    // Abstract base
     public abstract class Animal
     {
         public string Name { get; }
@@ -27,14 +26,13 @@ namespace ZooDemo
             => $"{Name} the {Species} [{Kind}] | Enclosure: {Enclosure}";
     }
 
-    // One concrete class for all animals
     public class ZooAnimal : Animal
     {
         public ZooAnimal(string name, string species, AnimalKind kind, string enclosure)
             : base(name, species, kind, enclosure) { }
     }
 
-    // Visitors
+    // --- Visitor ---
     public class Visitor
     {
         public string Name { get; }
@@ -47,90 +45,110 @@ namespace ZooDemo
         public override string ToString() => $"{Name} (Spent: {MoneySpent:C})";
     }
 
-    // Worker roles
+    // --- Worker base ---
     public enum Role { Doctor, Feeder, Cleaner }
 
     public abstract class Worker
     {
         public string Name { get; }
         public Role Role { get; }
+        public int StartTime { get; set; }
+        public int EndTime => StartTime + Duration;
 
-        protected Worker(string name, Role role)
+        public Animal? AssignedAnimal { get; private set; }
+        public int Duration { get; }
+
+        protected Worker(string name, Role role, int duration)
         {
             Name = name;
             Role = role;
+            Duration = duration;
         }
 
-        public abstract void PerformDuty(Zoo zoo);
+        public bool TryAssign(Animal animal, int currentTime)
+        {
+            if (AssignedAnimal != null || currentTime < StartTime || currentTime >= EndTime)
+                return false;
 
-        public override string ToString() => $"{Name} ({Role})";
+            AssignedAnimal = animal;
+            return true;
+        }
+
+        public void Release(int currentTime)
+        {
+            if (AssignedAnimal != null && currentTime >= EndTime)
+                AssignedAnimal = null;
+        }
+
+        public override string ToString() => $"{Name} ({Role}) [{StartTime}-{EndTime}]";
     }
 
+    // --- Worker types ---
     public class Doctor : Worker
     {
-        public Doctor(string name) : base(name, Role.Doctor) { }
-
-        public override void PerformDuty(Zoo zoo)
-        {
-            foreach (var animal in zoo.Animals.Take(2))
-            {
-                if (zoo.TryReserveAnimal(animal, this))
-                {
-                    Console.WriteLine($"{this} checked on {animal.Name} ({animal.Species}).");
-                }
-            }
-        }
+        public Doctor(string name) : base(name, Role.Doctor, 5) { }
     }
 
     public class Feeder : Worker
     {
-        public Feeder(string name) : base(name, Role.Feeder) { }
-
-        public override void PerformDuty(Zoo zoo)
-        {
-            foreach (var animal in zoo.Animals.Skip(1).Take(2))
-            {
-                if (zoo.TryReserveAnimal(animal, this))
-                {
-                    Console.WriteLine($"{this} fed {animal.Name} ({animal.Species}).");
-                }
-            }
-        }
+        public Feeder(string name) : base(name, Role.Feeder, 10) { }
     }
 
     public class Cleaner : Worker
     {
-        public Cleaner(string name) : base(name, Role.Cleaner) { }
-
-        public override void PerformDuty(Zoo zoo)
-        {
-            foreach (var animal in zoo.Animals.Skip(2).Take(2))
-            {
-                if (zoo.TryReserveAnimal(animal, this))
-                {
-                    Console.WriteLine($"{this} cleaned the enclosure of {animal.Name}.");
-                }
-            }
-        }
+        public Cleaner(string name) : base(name, Role.Cleaner, 2) { }
     }
 
-    // Zoo orchestrator
-    public class Zoo
+    // --- Simulation ---
+    public class ZooSimulation
     {
-        public List<Animal> Animals { get; } = new();
-        public List<Worker> Workers { get; } = new();
-        public List<Visitor> Visitors { get; } = new();
-
-        private readonly HashSet<Animal> _reservedAnimals = new();
+        private readonly List<Animal> _animals;
+        private readonly List<Worker> _workers;
+        private readonly List<Visitor> _visitors;
         private readonly Random _rng = new();
 
-        public bool TryReserveAnimal(Animal animal, Worker worker)
+        private const int DayLength = 120;
+        private const int TourLength = 10;
+
+        public ZooSimulation(List<Animal> animals, List<Worker> workers, List<Visitor> visitors)
         {
-            if (_reservedAnimals.Contains(animal))
-                return false;
+            _animals = animals;
+            _workers = workers;
+            _visitors = visitors;
 
-            _reservedAnimals.Add(animal);
+            foreach (var w in _workers)
+                w.StartTime = _rng.Next(0, DayLength - w.Duration);
+        }
 
+        public void Run()
+        {
+            Console.WriteLine("=== Zoo Day Simulation ===");
+
+            for (int time = 0; time < DayLength; time++)
+            {
+                foreach (var worker in _workers)
+                {
+                    if (time == worker.StartTime)
+                    {
+                        var animal = _animals[_rng.Next(_animals.Count)];
+                        if (worker.TryAssign(animal, time))
+                        {
+                            Console.WriteLine($"[{time}] {worker} started working with {animal.Name} ({animal.Species})");
+                            RunTour(worker, animal, time);
+                        }
+                    }
+
+                    worker.Release(time);
+                }
+            }
+
+            Console.WriteLine("=== Day Finished ===");
+            foreach (var v in _visitors)
+                Console.WriteLine(v);
+        }
+
+        private void RunTour(Worker worker, Animal animal, int startTime)
+        {
             decimal price = worker.Role switch
             {
                 Role.Doctor => 30m,
@@ -139,68 +157,46 @@ namespace ZooDemo
                 _ => 15m
             };
 
-            foreach (var v in Visitors)
+            foreach (var v in _visitors)
             {
                 if (_rng.NextDouble() < 0.5)
                 {
                     v.Spend(price);
-                    Console.WriteLine($"{v.Name} paid {price:C} to see {animal.Name} with {worker.Role}");
+                    Console.WriteLine($"  [{startTime}] {v.Name} paid {price:C} for {TourLength} time units to watch {worker.Role} with {animal.Name}");
                 }
             }
-
-            return true;
-        }
-
-        public void ClearReservations() => _reservedAnimals.Clear();
-
-        public void RunDailyRoutine()
-        {
-            ClearReservations();
-            foreach (var w in Workers)
-                w.PerformDuty(this);
-        }
-
-        public void PrintStatus()
-        {
-            Console.WriteLine("\n--- Animals ---");
-            foreach (var a in Animals) Console.WriteLine(a);
-
-            Console.WriteLine("\n--- Visitors ---");
-            foreach (var v in Visitors) Console.WriteLine(v);
         }
     }
 
+    // --- Program ---
     internal static class Program
     {
         private static void Main()
         {
-            var zoo = new Zoo();
-
-            // Animals all created from one class
-            zoo.Animals.Add(new ZooAnimal("Skye", "Eagle", AnimalKind.Flying, "Aviary A"));
-            zoo.Animals.Add(new ZooAnimal("Splash", "Dolphin", AnimalKind.Aquatic, "Aquarium 1"));
-            zoo.Animals.Add(new ZooAnimal("Simba", "Lion", AnimalKind.Land, "Savannah 2"));
-            zoo.Animals.Add(new ZooAnimal("Momo", "Penguin", AnimalKind.Aquatic, "Penguin Pool"));
-
-            // Workers
-            zoo.Workers.Add(new Doctor("Dr. Maya"));
-            zoo.Workers.Add(new Feeder("Alex"));
-            zoo.Workers.Add(new Cleaner("Rina"));
-
-            // Visitors
-            zoo.Visitors.Add(new Visitor("Alice"));
-            zoo.Visitors.Add(new Visitor("Bob"));
-            zoo.Visitors.Add(new Visitor("Carla"));
-
-            // Run for 3 days
-            for (int day = 1; day <= 3; day++)
+            var animals = new List<Animal>
             {
-                Console.WriteLine($"\n===== Day {day} =====");
-                zoo.RunDailyRoutine();
-                zoo.PrintStatus();
-            }
+                new ZooAnimal("Skye", "Eagle", AnimalKind.Flying, "Aviary A"),
+                new ZooAnimal("Splash", "Dolphin", AnimalKind.Aquatic, "Aquarium 1"),
+                new ZooAnimal("Simba", "Lion", AnimalKind.Land, "Savannah 2"),
+                new ZooAnimal("Momo", "Penguin", AnimalKind.Aquatic, "Penguin Pool")
+            };
 
-            Console.WriteLine("\nSimulation complete.");
+            var workers = new List<Worker>
+            {
+                new Doctor("Dr. Maya"),
+                new Feeder("Alex"),
+                new Cleaner("Rina")
+            };
+
+            var visitors = new List<Visitor>
+            {
+                new Visitor("Alice"),
+                new Visitor("Bob"),
+                new Visitor("Carla")
+            };
+
+            var simulation = new ZooSimulation(animals, workers, visitors);
+            simulation.Run();
         }
     }
 }
